@@ -26,12 +26,12 @@ private[macros] class Macro(val c: Context) extends ModulePattern {
     val trees       = extractTrees(annottees)
     val module      = extractModule(trees.module)
     val companion   = extractCompanion(trees.companion)
-    val service     = extractService(companion.body)
-    val capabilites = extractCapabilities(service)
+    val service     = extractService(companion.get.body)
+    val capabilites = extractCapabilities(service.get)
     val tags        = generateCapabilityTags(module, capabilites)
-    val mocks       = generateCapabilityMocks(companion, capabilites)
+    val mocks       = generateCapabilityMocks(companion.get, capabilites)
     val updated =
-      generateUpdatedCompanion(module.name, module.name.toTermName, module.serviceName, service, tags, mocks)
+      generateUpdatedCompanion(module.name, module.name.toTermName, module.serviceName.get, service.get, tags, mocks)
 
     q"""
        ${trees.module}

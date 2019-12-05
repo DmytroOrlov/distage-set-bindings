@@ -45,10 +45,11 @@ private[macros] class Macro(val c: Context) extends ModulePattern {
     val trees            = extractTrees(annottees)
     val module           = extractModule(trees.module)
     val companion        = extractCompanion(trees.companion)
-    val service          = extractService(companion.body)
-    val capabilites      = extractCapabilities(service)
-    val accessors        = generateCapabilityAccessors(module.name, module.serviceName, capabilites)
-    val updatedCompanion = generateUpdatedCompanion(config, module, companion, accessors)
+    val service          =
+      companion.flatMap(c => extractService(c.body))
+    val capabilites      = extractCapabilities(service.getOrElse(ServiceSummary(module.previousSiblings, module.nextSiblings, module.mods, module.typeParams, module.earlyDefinitions, module.parents, module.self, module.body)))
+    val accessors        = generateCapabilityAccessors(module.name, module.serviceName.getOrElse(TermName(module.name.toString.head.toLower + module.name.toString.tail)), capabilites, service.isEmpty)
+    val updatedCompanion = generateUpdatedCompanion(config, module, companion, accessors, service.isEmpty)
 
     q"""
        ${trees.module}
@@ -59,7 +60,8 @@ private[macros] class Macro(val c: Context) extends ModulePattern {
   private def generateCapabilityAccessors(
     moduleType: TypeName,
     serviceName: TermName,
-    capabilities: List[Capability]
+    capabilities: List[Capability],
+    structuralTyping: Boolean
   ): List[Tree] =
     capabilities.map { capability =>
       val (name, e, a) = (capability.name, capability.error, capability.value)
@@ -67,7 +69,7 @@ private[macros] class Macro(val c: Context) extends ModulePattern {
         if (capability.impl == EmptyTree) Modifiers()
         else Modifiers(Flag.OVERRIDE)
 
-      val returnType = tq"_root_.zio.ZIO[$moduleType, $e, $a]"
+      val returnType = if (structuralTyping) (if (capability.env.toString != "Any") tq"_root_.zio.ZIO[${capability.env} {val $serviceName: $moduleType}, $e, $a]" else tq"_root_.zio.ZIO[{val $serviceName: $moduleType}, $e, $a]") else tq"_root_.zio.ZIO[$moduleType, $e, $a]"
       val returnValue =
         capability.argLists match {
           case Some(argLists) if argLists.flatten.nonEmpty =>
@@ -88,26 +90,54 @@ private[macros] class Macro(val c: Context) extends ModulePattern {
   private def generateUpdatedCompanion(
     config: Config,
     module: ModuleSummary,
-    companion: CompanionSummary,
-    capabilityAccessors: List[Tree]
+    companion: Option[CompanionSummary],
+    capabilityAccessors: List[Tree],
+    structuralTyping: Boolean
   ): Tree = {
 
     val accessor: Tree = config.name match {
       case Some(name) => c.parse(s"object $name extends Accessors")
-      case None       => EmptyTree
+      case None => EmptyTree
     }
 
-    q"""
-      object ${companion.name} {
+    companion.fold {
+      q"""
+      object ${module.name.toTermName} {
 
-        ..${companion.body}
-
-       trait Accessors extends Service[${module.name}] {
+       trait Accessors {
          ..$capabilityAccessors
        }
 
        $accessor
      }
     """
+    } { companion =>
+      if (!structuralTyping)
+        q"""
+      object ${module.name.toTermName} {
+
+        ..${companion.body}
+
+       trait Accessors extends Service[${module.name}]  {
+         ..$capabilityAccessors
+       }
+
+       $accessor
+     }
+    """
+      else
+        q"""
+      object ${module.name.toTermName} {
+
+        ..${companion.body}
+
+       trait Accessors {
+         ..$capabilityAccessors
+       }
+
+       $accessor
+     }
+    """
+    }
   }
 }

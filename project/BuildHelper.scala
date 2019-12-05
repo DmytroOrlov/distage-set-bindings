@@ -125,7 +125,13 @@ object BuildHelper {
   def examplesSettings() =
     Seq(
       skip in publish := true,
-      libraryDependencies += "dev.zio" %% "zio" % zioVersion
+      libraryDependencies ++= Seq(
+        "dev.zio" %% "zio" % zioVersion,
+        "io.7mind.izumi" %% "distage-core" % "0.10.0-M6",
+      ),
+      scalacOptions ++= Seq(
+        "-language:reflectiveCalls",
+      )
     )
 
   def testSettings() =

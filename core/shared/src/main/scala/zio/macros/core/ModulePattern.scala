@@ -37,7 +37,7 @@ private[macros] trait ModulePattern {
 
   protected case class TreesSummary(
     module: ClassDef,
-    companion: ModuleDef
+    companion: Option[ModuleDef]
   )
 
   protected case class ModuleSummary(
@@ -50,7 +50,7 @@ private[macros] trait ModulePattern {
     parents: List[Tree],
     self: ValDef,
     body: List[Tree],
-    serviceName: TermName
+    serviceName: Option[TermName]
   )
 
   protected case class CompanionSummary(
@@ -64,7 +64,6 @@ private[macros] trait ModulePattern {
 
   protected case class ServiceSummary(
     previousSiblings: List[Tree],
-    service: Tree,
     nextSiblings: List[Tree],
     mods: Modifiers,
     typeParams: List[TypeDef],
@@ -87,9 +86,11 @@ private[macros] trait ModulePattern {
   protected def extractTrees(annottees: Seq[c.Tree]): TreesSummary =
     annottees match {
       case (module: ClassDef) :: (companion: ModuleDef) :: Nil if module.name.toTermName == companion.name =>
-        TreesSummary(module, companion)
+        TreesSummary(module, Some(companion))
       case (companion: ModuleDef) :: (module: ClassDef) :: Nil if module.name.toTermName == companion.name =>
-        TreesSummary(module, companion)
+        TreesSummary(module, Some(companion))
+      case (module: ClassDef) :: Nil =>
+        TreesSummary(module, None)
       case _ => abort("Module trait and companion object pair not found")
     }
 
@@ -115,7 +116,21 @@ private[macros] trait ModulePattern {
               parents,
               self,
               body,
-              service.asInstanceOf[ValDef].name.toTermName
+              Some(service.asInstanceOf[ValDef].name.toTermName)
+            )
+          case _ =>
+            val (prevSiblings, service, nextSiblings) = siblings(body, 0)
+            ModuleSummary(
+              prevSiblings,
+              nextSiblings,
+              mods,
+              moduleName,
+              typeParams,
+              earlyDefinitions,
+              parents,
+              self,
+              body,
+              None
             )
           case _ => abort("Service value not found in module trait")
         }
@@ -123,15 +138,17 @@ private[macros] trait ModulePattern {
     }
 
   @silent("pattern var [^\\s]+ in method unapply is never used")
-  protected def extractCompanion(companion: ModuleDef): CompanionSummary =
-    companion match {
-      case q"$mods object $name extends { ..$earlyDefinitions } with ..$parents { $self => ..$body }" =>
-        CompanionSummary(mods, name, earlyDefinitions, parents, self, body)
-      case _ => abort("Count not extract module companion")
+  protected def extractCompanion(companion: Option[ModuleDef]): Option[CompanionSummary] =
+    companion.flatMap { companion =>
+      companion match {
+        case q"$mods object $name extends { ..$earlyDefinitions } with ..$parents { $self => ..$body }" =>
+          Some(CompanionSummary(mods, name, earlyDefinitions, parents, self, body))
+        case _ => None
+      }
     }
 
   @silent("pattern var [^\\s]+ in method unapply is never used")
-  protected def extractService(body: List[Tree]): ServiceSummary =
+  protected def extractService(body: List[Tree]): Option[ServiceSummary] =
     body.indexWhere {
       case ClassDef(_, name, _, _) => name.toTermName.toString == "Service"
       case _                       => false
@@ -140,10 +157,10 @@ private[macros] trait ModulePattern {
         val (prevSiblings, service, nextSiblings) = siblings(body, idx)
         service match {
           case q"$mods trait Service[..$typeParams] extends { ..$earlyDefinitions } with ..$parents { $self => ..$body }" =>
-            ServiceSummary(prevSiblings, service, nextSiblings, mods, typeParams, earlyDefinitions, parents, self, body)
+            Some(ServiceSummary(prevSiblings, nextSiblings, mods, typeParams, earlyDefinitions, parents, self, body))
           case _ => abort("Could not extract service trait")
         }
-      case _ => abort("Could not find service trait")
+      case _ => None
     }
 
   protected def extractCapabilities(service: ServiceSummary): List[Capability] = {
