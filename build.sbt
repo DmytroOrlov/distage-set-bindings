@@ -34,7 +34,7 @@ inThisBuild(
   )
 )
 
-ThisBuild / publishTo := sonatypePublishToBundle.value
+ThisBuild / publishTo := Some("releases" at "https://nexus.kreditech.com/nexus/content/repositories/releases")
 
 addCommandAlias("fmt", "all scalafmtSbt scalafmt test:scalafmt")
 addCommandAlias("check", "all scalafmtSbtCheck scalafmtCheck test:scalafmtCheck")
