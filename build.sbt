@@ -174,7 +174,7 @@ lazy val `data-reader` = project
   .settings(
     libraryDependencies ++= Deps.core ++ Deps.test ++ Deps.circe,
   )
-  .dependsOn(core)
+  .dependsOn(core.jvm)
 
 ThisBuild / scalaVersion := "2.13.1"
 ThisBuild / libraryDependencies += compilerPlugin(Deps.betterMonadicFor)
